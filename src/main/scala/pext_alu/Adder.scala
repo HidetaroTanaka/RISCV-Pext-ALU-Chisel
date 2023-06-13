@@ -17,9 +17,11 @@ class Adder(xprlen: Int) extends Module {
      * true.B -> sub
      */
     val addsub = Input(Bool())
+    val signed = Input(Bool())
+    val saturating = Input(Bool())
+    val halving = Input(Bool())
     val out = Output(UInt(xprlen.W))
-    // I don't think normal addition/subtraction raises carry or overflow error
-    // val carry = Output(Bool())
+    val overflow = Output(Bool())
   })
 
   /**
@@ -80,7 +82,7 @@ class Adder(xprlen: Int) extends Module {
     )
   }
 
-  // io.carry := false.B
+  io.overflow := false.B
   when(e8) {
     io.out := Cat(e8_out_with_carry_vec.map(i => i(7,0)).reverse)
     // io.carry := e8_out_with_carry_vec.map(i => i(8)).reduce(_ || _)
