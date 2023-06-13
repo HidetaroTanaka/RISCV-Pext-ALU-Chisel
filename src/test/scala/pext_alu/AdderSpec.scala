@@ -28,9 +28,9 @@ class AdderSpec extends AnyFreeSpec with ChiselScalatestTester {
   "SIMD Adder should not act sussy" in {
     test(Adder(xprlen = 64)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       Random.setSeed(0)
-      val testValues_in1: Seq[Long] = (0 until 32).map(_ => Random.nextLong)
-      val testValues_in2: Seq[Long] = (0 until 32).map(_ => Random.nextLong)
-      val testValues_out: Seq[Long] = (0 until 32).map(
+      val testValues_in1 = (0 until 32).map(_ => Random.nextLong)
+      val testValues_in2 = (0 until 32).map(_ => Random.nextLong)
+      val testValues_out = (0 until 32).map(
         i => Int8Vec_Concatenate(Int8Vec_Add(Int64ToInt8Vec(testValues_in1(i)), Int64ToInt8Vec(testValues_in2(i))))
       )
 
@@ -40,11 +40,13 @@ class AdderSpec extends AnyFreeSpec with ChiselScalatestTester {
 
       val testValues8_inputValue1 = testValues_in1.map(x => Int64ToBigInt(x).U(64.W))
       val testValues8_inputValue2 = testValues_in2.map(x => Int64ToBigInt(x).U(64.W))
+      val testValues8_outputValue = testValues_out.map(x => Int64ToBigInt(x).U(64.W))
 
       dut.io.elen.poke("b00".U)
       for(i <- 0 until 32) {
         dut.io.rs1_value.poke(testValues8_inputValue1(i))
         dut.io.rs2_value.poke(testValues8_inputValue2(i))
+        dut.io.out.expect(testValues8_outputValue(i))
         dut.clock.step()
       }
     }
