@@ -41,7 +41,9 @@ class Adder(xprlen: Int) extends Module {
     val simd8 = Wire(Vec(simd_len, UInt(8.W)))
     // 0x01234567 => Seq(0x01, 0x23, 0x45, 0x67)
     val int8_array = uint.asBools.grouped(8).toSeq
-    simd8.zipWithIndex.foreach(e => e._1 := SeqBoolToUInt(int8_array(e._2)))
+    for((d, i) <- simd8.zipWithIndex) {
+      d := SeqBoolToUInt(int8_array(i))
+    }
     simd8
   }
 
