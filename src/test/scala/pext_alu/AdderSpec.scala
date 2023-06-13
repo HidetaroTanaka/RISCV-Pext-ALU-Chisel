@@ -20,13 +20,25 @@ class AdderSpec extends AnyFreeSpec with ChiselScalatestTester {
     require((vec1.length == 8) && (vec2.length == 8), "no")
     (0 until 8).map(i => (vec1(i) + vec2(i)).toByte)
   }
+  def Int8Vec_Sub(vec1: IndexedSeq[Byte], vec2: IndexedSeq[Byte]): IndexedSeq[Byte] = {
+    require((vec1.length == 8) && (vec2.length == 8), "no")
+    (0 until 8).map(i => (vec1(i) - vec2(i)).toByte)
+  }
   def Int16Vec_Add(vec1: IndexedSeq[Short], vec2: IndexedSeq[Short]): IndexedSeq[Short] = {
     require((vec1.length == 4) && (vec2.length == 4), "no")
     (0 until 4).map(i => (vec1(i) + vec2(i)).toShort)
   }
+  def Int16Vec_Sub(vec1: IndexedSeq[Short], vec2: IndexedSeq[Short]): IndexedSeq[Short] = {
+    require((vec1.length == 4) && (vec2.length == 4), "no")
+    (0 until 4).map(i => (vec1(i) - vec2(i)).toShort)
+  }
   def Int32Vec_Add(vec1: IndexedSeq[Int], vec2: IndexedSeq[Int]): IndexedSeq[Int] = {
     require((vec1.length == 2) && (vec2.length == 2), "no")
     (0 until 2).map(i => vec1(i) + vec2(i))
+  }
+  def Int32Vec_Sub(vec1: IndexedSeq[Int], vec2: IndexedSeq[Int]): IndexedSeq[Int] = {
+    require((vec1.length == 2) && (vec2.length == 2), "no")
+    (0 until 2).map(i => vec1(i) - vec2(i))
   }
   def Int64ToBigInt(int64: Long): BigInt = {
     (BigInt(int64 >>> 1) << 1) + (int64 & 0x1)
@@ -58,6 +70,15 @@ class AdderSpec extends AnyFreeSpec with ChiselScalatestTester {
       val testValues32bit_out = (0 until 32).map(
         i => Int32Vec_Concatenate(Int32Vec_Add(Int64ToInt32Vec(testValues_in1(i)), Int64ToInt32Vec(testValues_in2(i))))
       )
+      val testValuesSub8bit_out = (0 until 32).map(
+        i => Int8Vec_Concatenate(Int8Vec_Sub(Int64ToInt8Vec(testValues_in1(i)), Int64ToInt8Vec(testValues_in2(i))))
+      )
+      val testValuesSub16bit_out = (0 until 32).map(
+        i => Int16Vec_Concatenate(Int16Vec_Sub(Int64ToInt16Vec(testValues_in1(i)), Int64ToInt16Vec(testValues_in2(i))))
+      )
+      val testValuesSub32bit_out = (0 until 32).map(
+        i => Int32Vec_Concatenate(Int32Vec_Sub(Int64ToInt32Vec(testValues_in1(i)), Int64ToInt32Vec(testValues_in2(i))))
+      )
 
       // println(testValues_in1.map(x => x.toHexString.toUpperCase).mkString("(", ", ", ")"))
       // println(testValues_in2.map(x => x.toHexString.toUpperCase).mkString("(", ", ", ")"))
@@ -69,9 +90,13 @@ class AdderSpec extends AnyFreeSpec with ChiselScalatestTester {
       val testValues8_outputValue = testValues_out.map(int64ToChiselUInt64W)
       val testValues16_outputValue = testValues16bit_out.map(int64ToChiselUInt64W)
       val testValues32_outputValue = testValues32bit_out.map(int64ToChiselUInt64W)
+      val testValuesSub8_outputValue = testValuesSub8bit_out.map(int64ToChiselUInt64W)
+      val testValuesSub16_outputValue = testValuesSub16bit_out.map(int64ToChiselUInt64W)
+      val testValuesSub32_outputValue = testValuesSub32bit_out.map(int64ToChiselUInt64W)
 
       println("start of 8bit addition test:")
       dut.io.elen.poke("b00".U)
+      dut.io.addsub.poke(false.B)
       for(i <- 0 until 32) {
         dut.io.rs1_value.poke(testValues_inputValue1(i))
         dut.io.rs2_value.poke(testValues_inputValue2(i))
@@ -81,10 +106,27 @@ class AdderSpec extends AnyFreeSpec with ChiselScalatestTester {
 
       dut.io.rs1_value.poke(0.U(64.W))
       dut.io.rs2_value.poke(0.U(64.W))
+      dut.io.addsub.poke(false.B)
+      dut.clock.step(8)
+
+      println("start of 8bit subtraction test:")
+      dut.io.elen.poke("b00".U)
+      dut.io.addsub.poke(true.B)
+      for (i <- 0 until 32) {
+        dut.io.rs1_value.poke(testValues_inputValue1(i))
+        dut.io.rs2_value.poke(testValues_inputValue2(i))
+        dut.io.out.expect(testValuesSub8_outputValue(i))
+        dut.clock.step()
+      }
+
+      dut.io.rs1_value.poke(0.U(64.W))
+      dut.io.rs2_value.poke(0.U(64.W))
+      dut.io.addsub.poke(false.B)
       dut.clock.step(8)
 
       println("start of 16bit addition test:")
       dut.io.elen.poke("b01".U)
+      dut.io.addsub.poke(false.B)
       for (i <- 0 until 32) {
         dut.io.rs1_value.poke(testValues_inputValue1(i))
         dut.io.rs2_value.poke(testValues_inputValue2(i))
@@ -92,8 +134,19 @@ class AdderSpec extends AnyFreeSpec with ChiselScalatestTester {
         dut.clock.step()
       }
 
+      println("start of 16bit subtraction test:")
+      dut.io.elen.poke("b01".U)
+      dut.io.addsub.poke(true.B)
+      for (i <- 0 until 32) {
+        dut.io.rs1_value.poke(testValues_inputValue1(i))
+        dut.io.rs2_value.poke(testValues_inputValue2(i))
+        dut.io.out.expect(testValuesSub16_outputValue(i))
+        dut.clock.step()
+      }
+
       dut.io.rs1_value.poke(0.U(64.W))
       dut.io.rs2_value.poke(0.U(64.W))
+      dut.io.addsub.poke(false.B)
       dut.clock.step(8)
 
       println("start of 32bit addition test:")
@@ -102,6 +155,21 @@ class AdderSpec extends AnyFreeSpec with ChiselScalatestTester {
         dut.io.rs1_value.poke(testValues_inputValue1(i))
         dut.io.rs2_value.poke(testValues_inputValue2(i))
         dut.io.out.expect(testValues32_outputValue(i))
+        dut.clock.step()
+      }
+
+      dut.io.rs1_value.poke(0.U(64.W))
+      dut.io.rs2_value.poke(0.U(64.W))
+      dut.io.addsub.poke(false.B)
+      dut.clock.step(8)
+
+      println("start of 32bit addition test:")
+      dut.io.elen.poke("b10".U)
+      dut.io.addsub.poke(true.B)
+      for (i <- 0 until 32) {
+        dut.io.rs1_value.poke(testValues_inputValue1(i))
+        dut.io.rs2_value.poke(testValues_inputValue2(i))
+        dut.io.out.expect(testValuesSub32_outputValue(i))
         dut.clock.step()
       }
     }

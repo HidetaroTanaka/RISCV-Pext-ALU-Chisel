@@ -9,8 +9,15 @@ class Adder(xprlen: Int) extends Module {
     val rs1_value = Input(UInt(xprlen.W))
     val rs2_value = Input(UInt(xprlen.W))
     val elen = Input(UInt(2.W)) // 00 -> 8bit, 01 -> 16bit, 10 -> 32bit
+    /**
+     * false.B -> add
+     *
+     * true.B -> sub
+     */
+    val addsub = Input(Bool())
     val out = Output(UInt(xprlen.W))
-    val carry = Output(Bool())
+    // I don't think normal addition/subtraction raises carry or overflow error
+    // val carry = Output(Bool())
   })
 
   /**
@@ -47,29 +54,38 @@ class Adder(xprlen: Int) extends Module {
   val e16 = (io.elen === "b01".U)
 
   for ((d, i) <- e8_out_with_carry_vec.zipWithIndex) {
-    d := Cat(false.B, e8_rs1_vec(i)) + Cat(false.B, e8_rs2_vec(i))
+    d := Mux(io.addsub,
+      Cat(false.B, e8_rs1_vec(i)) - Cat(false.B, e8_rs2_vec(i)),
+      Cat(false.B, e8_rs1_vec(i)) + Cat(false.B, e8_rs2_vec(i))
+    )
   }
 
   val e16_out_with_carry_vec = Wire(Vec(e16_simd_len, UInt(17.W)))
   for((d,i) <- e16_out_with_carry_vec.zipWithIndex) {
-    d := Cat(e8_out_with_carry_vec(i*2+1) + e8_out_with_carry_vec(i*2)(8), e8_out_with_carry_vec(i*2)(7,0))
+    d := Mux(io.addsub,
+      Cat(e8_out_with_carry_vec(i*2+1) - e8_out_with_carry_vec(i*2)(8), e8_out_with_carry_vec(i*2)(7,0)),
+      Cat(e8_out_with_carry_vec(i*2+1) + e8_out_with_carry_vec(i*2)(8), e8_out_with_carry_vec(i*2)(7,0))
+    )
   }
 
   val e32_out_with_carry_vec = Wire(Vec(e32_simd_len, UInt(33.W)))
   for((d,i) <- e32_out_with_carry_vec.zipWithIndex) {
-    d := Cat(e16_out_with_carry_vec(i*2+1) + e16_out_with_carry_vec(i*2)(16), e16_out_with_carry_vec(i*2)(15,0))
+    d := Mux(io.addsub,
+      Cat(e16_out_with_carry_vec(i*2+1) - e16_out_with_carry_vec(i*2)(16), e16_out_with_carry_vec(i*2)(15,0)),
+      Cat(e16_out_with_carry_vec(i*2+1) + e16_out_with_carry_vec(i*2)(16), e16_out_with_carry_vec(i*2)(15,0))
+    )
   }
 
-  io.carry := false.B
+  // io.carry := false.B
   when(e8) {
     io.out := Cat(e8_out_with_carry_vec.map(i => i(7,0)).reverse)
-    io.carry := e8_out_with_carry_vec.map(i => i(8)).reduce(_ || _)
+    // io.carry := e8_out_with_carry_vec.map(i => i(8)).reduce(_ || _)
   } .elsewhen(e16) {
     io.out := Cat(e16_out_with_carry_vec.map(i => i(15,0)).reverse)
-    io.carry := e16_out_with_carry_vec.map(i => i(16)).reduce(_ || _)
+    // io.carry := e16_out_with_carry_vec.map(i => i(16)).reduce(_ || _)
   } .otherwise {
     io.out := (if(xprlen != 64) 0.U(xprlen.W) else Cat(e32_out_with_carry_vec.map(i => i(31,0)).reverse))
-    io.carry := (if(xprlen != 64) false.B else e32_out_with_carry_vec.map(i => i(32)).reduce(_ || _))
+    // io.carry := (if(xprlen != 64) false.B else e32_out_with_carry_vec.map(i => i(32)).reduce(_ || _))
   }
 }
 
