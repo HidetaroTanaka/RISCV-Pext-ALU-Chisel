@@ -17,6 +17,9 @@ class Adder(xprlen: Int) extends Module {
      * true.B -> sub
      */
     val addsub = Input(Bool())
+    /**
+     * false.B -> unsigned, true.B -> signed
+     */
     val signed = Input(Bool())
     val saturating = Input(Bool())
     val halving = Input(Bool())
@@ -34,17 +37,17 @@ class Adder(xprlen: Int) extends Module {
   }
 
   /**
-   * UIntを8bitSIMDベクタに変換する
+   * UIntを(8bit+キャリー)SIMDベクタに変換する
    * @param uint 元の値（64bitまたは32bit）
    * @return uintを下位から8bitごとに分割してVec[UInt]にしたもの
    */
   def divideUIntToSimd8(uint: UInt): Vec[UInt] = {
     val simd_len = uint.getWidth / 8
-    val simd8 = Wire(Vec(simd_len, UInt(8.W)))
+    val simd8 = Wire(Vec(simd_len, UInt(9.W)))
     // 0x01234567 => Seq(0x01, 0x23, 0x45, 0x67)
     val int8_array = uint.asBools.grouped(8).toSeq
     for((d, i) <- simd8.zipWithIndex) {
-      d := SeqBoolToUInt(int8_array(i))
+      d := Cat(false.B, SeqBoolToUInt(int8_array(i)))
     }
     simd8
   }
@@ -55,14 +58,15 @@ class Adder(xprlen: Int) extends Module {
   val e8_rs1_vec = divideUIntToSimd8(io.rs1_value)
   val e8_rs2_vec = divideUIntToSimd8(io.rs2_value)
   val e8_out_with_carry_vec = Wire(Vec(e8_simd_len, UInt(9.W)))
+  val e8_out_overflow_array = Wire(Vec(e8_simd_len, Bool()))
 
   val e8 = (io.elen === "b00".U)
   val e16 = (io.elen === "b01".U)
 
   for ((d, i) <- e8_out_with_carry_vec.zipWithIndex) {
     d := Mux(io.addsub,
-      Cat(false.B, e8_rs1_vec(i)) - Cat(false.B, e8_rs2_vec(i)),
-      Cat(false.B, e8_rs1_vec(i)) + Cat(false.B, e8_rs2_vec(i))
+      e8_rs1_vec(i) - e8_rs2_vec(i),
+      e8_rs1_vec(i) + e8_rs2_vec(i)
     )
   }
 
