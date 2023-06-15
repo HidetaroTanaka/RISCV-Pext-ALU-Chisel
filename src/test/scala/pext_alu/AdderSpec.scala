@@ -130,9 +130,6 @@ class AdderSpec extends AnyFreeSpec with ChiselScalatestTester {
       println("start of 8bit addition test:")
       dut.io.elen.poke("b00".U)
       dut.io.addsub.poke(false.B)
-      dut.io.signed.poke(false.B)
-      dut.io.saturating.poke(false.B)
-      dut.io.halving.poke(false.B)
       doTest(testValues8_outputValue)
 
       println("start of 8bit subtraction test:")
