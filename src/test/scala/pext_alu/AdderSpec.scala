@@ -40,6 +40,14 @@ class AdderSpec extends AnyFreeSpec with ChiselScalatestTester {
       op(val1, val2)
     }
   }
+  def SimdVec_ApplyOpWithFlag[T: TypeTag](vec1: IndexedSeq[T], vec2: IndexedSeq[T], op: (T, T) => (T, Boolean)): (IndexedSeq[T], Boolean) = {
+    val elen = getElenOf[T]
+    require((vec1.length == 64/elen) && (vec2.length == 64/elen), "no")
+    val res_array = for((val1, val2) <- (vec1 zip vec2)) yield {
+      op(val1, val2)
+    }
+    (res_array.map(x => x._1), res_array.map(x => x._2).reduce(_ || _))
+  }
   def Int8Vec_Add(vec1: IndexedSeq[Byte], vec2: IndexedSeq[Byte]): IndexedSeq[Byte] = {
     SimdVec_ApplyOp[Byte](vec1, vec2, (x, y) => (x + y).toByte)
   }
@@ -57,6 +65,71 @@ class AdderSpec extends AnyFreeSpec with ChiselScalatestTester {
   }
   def Int32Vec_Sub(vec1: IndexedSeq[Int], vec2: IndexedSeq[Int]): IndexedSeq[Int] = {
     SimdVec_ApplyOp[Int](vec1, vec2, (x, y) => x - y)
+  }
+  def Int8Vec_SaturatingOp(vec1: IndexedSeq[Byte], vec2: IndexedSeq[Byte], signed: Boolean, addsub: Boolean): (IndexedSeq[Byte], Boolean) = {
+    SimdVec_ApplyOpWithFlag[Byte](vec1, vec2, (x, y) => {
+      if(signed) {
+        val res = if(addsub) x - y else x + y
+        if(res > Byte.MaxValue) {
+          (Byte.MaxValue, true)
+        } else if(res < Byte.MinValue) {
+          (Byte.MinValue, true)
+        } else {
+          (res.toByte, false)
+        }
+      } else {
+        val res = if(addsub) (x & 0xFF) - (y & 0xFF) else (x & 0xFF) + (y & 0xFF)
+        if(res > 0xFF) {
+          (0xFF.toByte, true)
+        } else {
+          (res.toByte, false)
+        }
+      }
+    })
+  }
+
+  def Int16Vec_SaturatingOp(vec1: IndexedSeq[Short], vec2: IndexedSeq[Short], signed: Boolean, addsub: Boolean): (IndexedSeq[Short], Boolean) = {
+    SimdVec_ApplyOpWithFlag[Short](vec1, vec2, (x, y) => {
+      if (signed) {
+        val res = if (addsub) x - y else x + y
+        if (res > Short.MaxValue) {
+          (Short.MaxValue, true)
+        } else if (res < Short.MinValue) {
+          (Short.MinValue, true)
+        } else {
+          (res.toShort, false)
+        }
+      } else {
+        val res = if (addsub) (x & 0xFFFF) - (y & 0xFFFF) else (x & 0xFFFF) + (y & 0xFFFF)
+        if (res > 0xFFFF) {
+          (0xFFFF.toShort, true)
+        } else {
+          (res.toShort, false)
+        }
+      }
+    })
+  }
+
+  def Int32Vec_SaturatingOp(vec1: IndexedSeq[Int], vec2: IndexedSeq[Int], signed: Boolean, addsub: Boolean): (IndexedSeq[Int], Boolean) = {
+    SimdVec_ApplyOpWithFlag[Int](vec1, vec2, (x, y) => {
+      if (signed) {
+        val res = if (addsub) x - y else x + y
+        if (res > Int.MaxValue) {
+          (Int.MaxValue, true)
+        } else if (res < Int.MinValue) {
+          (Int.MinValue, true)
+        } else {
+          (res, false)
+        }
+      } else {
+        val res = if (addsub) (x & 0x0FFFFFFFFL) - (y & 0x0FFFFFFFFL) else (x & 0x0FFFFFFFFL) + (y & 0x0FFFFFFFFL)
+        if (res > 0x0FFFFFFFFL) {
+          (0x0FFFFFFFFL.toInt, true)
+        } else {
+          (res.toInt, false)
+        }
+      }
+    })
   }
   def Int64ToBigInt(int64: Long): BigInt = {
     (BigInt(int64 >>> 1) << 1) + (int64 & 0x1)
@@ -103,6 +176,22 @@ class AdderSpec extends AnyFreeSpec with ChiselScalatestTester {
       val testValuesSub32bit_out = for ((in1, in2) <- (testValues_in1 zip testValues_in2)) yield {
         SimdVec_Concatenate[Int](Int32Vec_Sub(Int64ToSimdVec[Int](in1), Int64ToSimdVec[Int](in2)))
       }
+      val testValuesKAdd8bit_out: IndexedSeq[(Long, Boolean)] = for((in1, in2) <- (testValues_in1 zip testValues_in2)) yield {
+        val ans = Int8Vec_SaturatingOp(Int64ToSimdVec[Byte](in1), Int64ToSimdVec[Byte](in2), signed = true, addsub = false)
+        (SimdVec_Concatenate[Byte](ans._1), ans._2)
+      }
+      val testValuesUKAdd8bit_out: IndexedSeq[(Long, Boolean)] = for ((in1, in2) <- (testValues_in1 zip testValues_in2)) yield {
+        val ans = Int8Vec_SaturatingOp(Int64ToSimdVec[Byte](in1), Int64ToSimdVec[Byte](in2), signed = false, addsub = false)
+        (SimdVec_Concatenate[Byte](ans._1), ans._2)
+      }
+      val testValuesKSub8bit_out: IndexedSeq[(Long, Boolean)] = for ((in1, in2) <- (testValues_in1 zip testValues_in2)) yield {
+        val ans = Int8Vec_SaturatingOp(Int64ToSimdVec[Byte](in1), Int64ToSimdVec[Byte](in2), signed = true, addsub = true)
+        (SimdVec_Concatenate[Byte](ans._1), ans._2)
+      }
+      val testValuesUKSub8bit_out: IndexedSeq[(Long, Boolean)] = for ((in1, in2) <- (testValues_in1 zip testValues_in2)) yield {
+        val ans = Int8Vec_SaturatingOp(Int64ToSimdVec[Byte](in1), Int64ToSimdVec[Byte](in2), signed = false, addsub = true)
+        (SimdVec_Concatenate[Byte](ans._1), ans._2)
+      }
 
       val int64ToChiselUInt64W: Long => UInt = x => Int64ToBigInt(x).U(64.W)
       val testValues_inputValue1 = testValues_in1.map(int64ToChiselUInt64W)
@@ -113,6 +202,10 @@ class AdderSpec extends AnyFreeSpec with ChiselScalatestTester {
       val testValuesSub8_outputValue = testValuesSub8bit_out.map(int64ToChiselUInt64W)
       val testValuesSub16_outputValue = testValuesSub16bit_out.map(int64ToChiselUInt64W)
       val testValuesSub32_outputValue = testValuesSub32bit_out.map(int64ToChiselUInt64W)
+      val testValuesKAdd8_outputValue = testValuesKAdd8bit_out.map(e => (int64ToChiselUInt64W(e._1), e._2.B))
+      val testValuesUKAdd8_outputValue: Seq[(UInt, Bool)] = testValuesUKAdd8bit_out.map(e => (int64ToChiselUInt64W(e._1), e._2.B))
+      val testValuesKSub8_outputValue: Seq[(UInt, Bool)] = testValuesKSub8bit_out.map(e => (int64ToChiselUInt64W(e._1), e._2.B))
+      val testValuesUKSub8_outputValue: Seq[(UInt, Bool)] = testValuesUKSub8bit_out.map(e => (int64ToChiselUInt64W(e._1), e._2.B))
 
       def doTest(expect_vector: IndexedSeq[UInt]): Unit = {
         for (i <- expect_vector.indices) {
@@ -127,9 +220,29 @@ class AdderSpec extends AnyFreeSpec with ChiselScalatestTester {
         dut.clock.step(8)
       }
 
+      def doTest_withOverflow(expect_vector: IndexedSeq[(UInt, Bool)]): Unit = {
+        for (i <- expect_vector.indices) {
+          dut.io.rs1_value.poke(testValues_inputValue1(i))
+          dut.io.rs2_value.poke(testValues_inputValue2(i))
+          dut.io.out.expect(expect_vector(i)._1)
+          dut.io.overflow.expect(expect_vector(i)._2)
+          dut.clock.step()
+        }
+        dut.io.rs1_value.poke(0.U(64.W))
+        dut.io.rs2_value.poke(0.U(64.W))
+        dut.io.addsub.poke(false.B)
+        dut.io.signed.poke(false.B)
+        dut.io.saturating.poke(false.B)
+        dut.io.halving.poke(false.B)
+        dut.clock.step(8)
+      }
+
       println("start of 8bit addition test:")
       dut.io.elen.poke("b00".U)
       dut.io.addsub.poke(false.B)
+      dut.io.signed.poke(false.B)
+      dut.io.saturating.poke(false.B)
+      dut.io.halving.poke(false.B)
       doTest(testValues8_outputValue)
 
       println("start of 8bit subtraction test:")
@@ -152,10 +265,18 @@ class AdderSpec extends AnyFreeSpec with ChiselScalatestTester {
       dut.io.addsub.poke(false.B)
       doTest(testValues32_outputValue)
 
-      println("start of 32bit addition test:")
+      println("start of 32bit subtraction test:")
       dut.io.elen.poke("b10".U)
       dut.io.addsub.poke(true.B)
       doTest(testValuesSub32_outputValue)
+
+      println("start of 8bit signed saturating addition test:")
+      dut.io.elen.poke("b00".U)
+      dut.io.addsub.poke(false.B)
+      dut.io.signed.poke(true.B)
+      dut.io.saturating.poke(true.B)
+      dut.io.halving.poke(false.B)
+      doTest_withOverflow(testValuesKAdd8_outputValue)
     }
   }
 }

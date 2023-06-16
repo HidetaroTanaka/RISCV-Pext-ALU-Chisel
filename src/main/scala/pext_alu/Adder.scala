@@ -125,9 +125,7 @@ class Adder(xprlen: Int) extends Module {
     sub(in1, in2, signed)(8, 1)
   }
 
-  when(io.saturating && io.halving) {
-    printf("Error: Saturating and halving flag both true.")
-  }
+  assume(!(io.saturating && io.halving), "Error: Saturating and halving flag both true.")
 
   val e8_simd_len = xprlen / 8
   val e16_simd_len = xprlen / 16
@@ -171,7 +169,7 @@ class Adder(xprlen: Int) extends Module {
       (io.addsub && !io.saturating && !io.halving) -> sub(in1, in2, false.B)(7,0),
       // KADD, UKADD
       (!io.addsub && io.saturating && !io.halving) -> {
-        val (value, overflow) = saturated_add(in1, in1, io.signed)
+        val (value, overflow) = saturated_add(in1, in2, io.signed)
         when(overflow && e8) {
           io.overflow := true.B
         }
@@ -179,7 +177,7 @@ class Adder(xprlen: Int) extends Module {
       },
       // KSUB, UKSUB
       (io.addsub && io.saturating && !io.halving) -> {
-        val (value, overflow) = saturated_sub(in1, in1, io.signed)
+        val (value, overflow) = saturated_sub(in1, in2, io.signed)
         when(overflow && e8) {
           io.overflow := true.B
         }
@@ -200,7 +198,7 @@ class Adder(xprlen: Int) extends Module {
       (io.addsub && !io.saturating && !io.halving) -> sub(in1, in2, false.B)(15, 0),
       // KADD, UKADD
       (!io.addsub && io.saturating && !io.halving) -> {
-        val (value, overflow) = saturated_add(in1, in1, io.signed)
+        val (value, overflow) = saturated_add(in1, in2, io.signed)
         when(overflow && e16) {
           io.overflow := true.B
         }
@@ -208,7 +206,7 @@ class Adder(xprlen: Int) extends Module {
       },
       // KSUB, UKSUB
       (io.addsub && io.saturating && !io.halving) -> {
-        val (value, overflow) = saturated_sub(in1, in1, io.signed)
+        val (value, overflow) = saturated_sub(in1, in2, io.signed)
         when(overflow && e16) {
           io.overflow := true.B
         }
@@ -229,7 +227,7 @@ class Adder(xprlen: Int) extends Module {
       (io.addsub && !io.saturating && !io.halving) -> sub(in1, in2, false.B)(31, 0),
       // KADD, UKADD
       (!io.addsub && io.saturating && !io.halving) -> {
-        val (value, overflow) = saturated_add(in1, in1, io.signed)
+        val (value, overflow) = saturated_add(in1, in2, io.signed)
         when(overflow && e32) {
           io.overflow := true.B
         }
@@ -237,7 +235,7 @@ class Adder(xprlen: Int) extends Module {
       },
       // KSUB, UKSUB
       (io.addsub && io.saturating && !io.halving) -> {
-        val (value, overflow) = saturated_sub(in1, in1, io.signed)
+        val (value, overflow) = saturated_sub(in1, in2, io.signed)
         when(overflow && e32) {
           io.overflow := true.B
         }
