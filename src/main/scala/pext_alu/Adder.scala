@@ -24,6 +24,7 @@ class Adder(xprlen: Int) extends Module {
     val saturating = Input(Bool())
     val halving = Input(Bool())
     val out = Output(UInt(xprlen.W))
+    val overflow = Output(Bool())
   })
 
   /**
@@ -124,57 +125,140 @@ class Adder(xprlen: Int) extends Module {
     sub(in1, in2, signed)(8, 1)
   }
 
+  when(io.saturating && io.halving) {
+    printf("Error: Saturating and halving flag both true.")
+  }
+
   val e8_simd_len = xprlen / 8
   val e16_simd_len = xprlen / 16
   val e32_simd_len = xprlen / 32
   val e8_rs1_vec = divideUIntToSimd8(io.rs1_value)
   val e8_rs2_vec = divideUIntToSimd8(io.rs2_value)
-  val e8_out_as_result9 = Wire(Vec(e8_simd_len, UInt(9.W)))
-  val zippedInputsAndOutput: LazyZip3[UInt, UInt, UInt, e8_rs1_vec.type] = e8_rs1_vec.lazyZip(e8_rs2_vec).lazyZip(e8_out_as_result9)
+  val e16_rs1_vec = Wire(Vec(e16_simd_len, UInt(16.W)))
+  for((d, i) <- e16_rs1_vec.zipWithIndex) {
+    d := Cat(e8_rs1_vec(2*i+1), e8_rs1_vec(2*i))
+  }
+  val e16_rs2_vec = Wire(Vec(e16_simd_len, UInt(16.W)))
+  for((d, i) <- e16_rs2_vec.zipWithIndex) {
+    d := Cat(e8_rs2_vec(2*i+1), e8_rs2_vec(2*i))
+  }
+  val e32_rs1_vec = Wire(Vec(e32_simd_len, UInt(32.W)))
+  for((d, i) <- e32_rs1_vec.zipWithIndex) {
+    d := Cat(e16_rs1_vec(2*i+1), e16_rs1_vec(2*i))
+  }
+  val e32_rs2_vec = Wire(Vec(e32_simd_len, UInt(32.W)))
+  for((d, i) <- e32_rs2_vec.zipWithIndex) {
+    d := Cat(e16_rs2_vec(2*i+1), e16_rs2_vec(2*i))
+  }
+  val e8_out_vec = Wire(Vec(e8_simd_len, UInt(8.W)))
+  val e16_out_vec = Wire(Vec(e16_simd_len, UInt(16.W)))
+  val e32_out_vec = Wire(Vec(e32_simd_len, UInt(32.W)))
+  val e8_ZippedInOut: LazyZip3[UInt, UInt, UInt, e8_rs1_vec.type] = e8_rs1_vec.lazyZip(e8_rs2_vec).lazyZip(e8_out_vec)
+  val e16_ZippedInOut: LazyZip3[UInt, UInt, UInt, e16_rs1_vec.type] = e16_rs1_vec.lazyZip(e16_rs2_vec).lazyZip(e16_out_vec)
+  val e32_ZippedInOut: LazyZip3[UInt, UInt, UInt, e32_rs1_vec.type] = e32_rs1_vec.lazyZip(e32_rs2_vec).lazyZip(e32_out_vec)
 
   val e8 = (io.elen === "b00".U)
   val e16 = (io.elen === "b01".U)
+  val e32 = (io.elen === "b10".U)
 
-  for((in1, in2, res) <- zippedInputsAndOutput) {
-    res := Mux(!io.signed || (!io.halving && !io.saturating),
-      // Unsigned (ADD, URADD, UKADD)
-      Mux(io.addsub,
-        Cat(false.B, in1) - Cat(false.B, in2),
-        Cat(false.B, in1) + Cat(false.B, in2)
-      ),
-      // Signed
-      Mux(io.addsub,
-        Cat(in1.tail(0), in1) - Cat(in2.tail(0), in2),
-        Cat(in1.tail(0), in1) + Cat(in2.tail(0), in2)
-      )
-    )
+  io.overflow := false.B
+
+  for((in1, in2, res) <- e8_ZippedInOut) {
+    res := MuxCase(0.U, Seq(
+      // ADD
+      (!io.addsub && !io.saturating && !io.halving) -> add(in1, in2, false.B)(7,0),
+      // SUB
+      (io.addsub && !io.saturating && !io.halving) -> sub(in1, in2, false.B)(7,0),
+      // KADD, UKADD
+      (!io.addsub && io.saturating && !io.halving) -> {
+        val (value, overflow) = saturated_add(in1, in1, io.signed)
+        when(overflow && e8) {
+          io.overflow := true.B
+        }
+        value
+      },
+      // KSUB, UKSUB
+      (io.addsub && io.saturating && !io.halving) -> {
+        val (value, overflow) = saturated_sub(in1, in1, io.signed)
+        when(overflow && e8) {
+          io.overflow := true.B
+        }
+        value
+      },
+      // RADD, URADD
+      (!io.addsub && !io.saturating && io.halving) -> halving_add(in1, in2, io.signed),
+      // RSUB, URSUB
+      (io.addsub && !io.saturating && io.halving) -> halving_sub(in1, in2, io.signed)
+    ))
   }
 
-  val e16_out_with_carry_vec = Wire(Vec(e16_simd_len, UInt(17.W)))
-  for((d,i) <- e16_out_with_carry_vec.zipWithIndex) {
-    d := Mux(io.addsub,
-      Cat(e8_out_as_result9(i*2+1) - e8_out_as_result9(i*2)(8), e8_out_as_result9(i*2)(7,0)),
-      Cat(e8_out_as_result9(i*2+1) + e8_out_as_result9(i*2)(8), e8_out_as_result9(i*2)(7,0))
-    )
+  for ((in1, in2, res) <- e16_ZippedInOut) {
+    res := MuxCase(0.U, Seq(
+      // ADD
+      (!io.addsub && !io.saturating && !io.halving) -> add(in1, in2, false.B)(15, 0),
+      // SUB
+      (io.addsub && !io.saturating && !io.halving) -> sub(in1, in2, false.B)(15, 0),
+      // KADD, UKADD
+      (!io.addsub && io.saturating && !io.halving) -> {
+        val (value, overflow) = saturated_add(in1, in1, io.signed)
+        when(overflow && e16) {
+          io.overflow := true.B
+        }
+        value
+      },
+      // KSUB, UKSUB
+      (io.addsub && io.saturating && !io.halving) -> {
+        val (value, overflow) = saturated_sub(in1, in1, io.signed)
+        when(overflow && e16) {
+          io.overflow := true.B
+        }
+        value
+      },
+      // RADD, URADD
+      (!io.addsub && !io.saturating && io.halving) -> halving_add(in1, in2, io.signed),
+      // RSUB, URSUB
+      (io.addsub && !io.saturating && io.halving) -> halving_sub(in1, in2, io.signed)
+    ))
   }
 
-  val e32_out_with_carry_vec = Wire(Vec(e32_simd_len, UInt(33.W)))
-  for((d,i) <- e32_out_with_carry_vec.zipWithIndex) {
-    d := Mux(io.addsub,
-      Cat(e16_out_with_carry_vec(i*2+1) - e16_out_with_carry_vec(i*2)(16), e16_out_with_carry_vec(i*2)(15,0)),
-      Cat(e16_out_with_carry_vec(i*2+1) + e16_out_with_carry_vec(i*2)(16), e16_out_with_carry_vec(i*2)(15,0))
-    )
+  for ((in1, in2, res) <- e32_ZippedInOut) {
+    res := MuxCase(0.U, Seq(
+      // ADD
+      (!io.addsub && !io.saturating && !io.halving) -> add(in1, in2, false.B)(31, 0),
+      // SUB
+      (io.addsub && !io.saturating && !io.halving) -> sub(in1, in2, false.B)(31, 0),
+      // KADD, UKADD
+      (!io.addsub && io.saturating && !io.halving) -> {
+        val (value, overflow) = saturated_add(in1, in1, io.signed)
+        when(overflow && e32) {
+          io.overflow := true.B
+        }
+        value
+      },
+      // KSUB, UKSUB
+      (io.addsub && io.saturating && !io.halving) -> {
+        val (value, overflow) = saturated_sub(in1, in1, io.signed)
+        when(overflow && e32) {
+          io.overflow := true.B
+        }
+        value
+      },
+      // RADD, URADD
+      (!io.addsub && !io.saturating && io.halving) -> halving_add(in1, in2, io.signed),
+      // RSUB, URSUB
+      (io.addsub && !io.saturating && io.halving) -> halving_sub(in1, in2, io.signed)
+    ))
   }
+
 
   when(e8) {
-    io.out := Cat(e8_out_as_result9.map(i => i(7,0)).reverse)
-    // io.carry := e8_out_with_carry_vec.map(i => i(8)).reduce(_ || _)
+    io.out := Cat(e8_out_vec.reverse)
   } .elsewhen(e16) {
-    io.out := Cat(e16_out_with_carry_vec.map(i => i(15,0)).reverse)
-    // io.carry := e16_out_with_carry_vec.map(i => i(16)).reduce(_ || _)
+    io.out := Cat(e16_out_vec.reverse)
+  } .elsewhen(e32) {
+    io.out := Cat(e32_out_vec.reverse)
   } .otherwise {
-    io.out := (if(xprlen != 64) 0.U(xprlen.W) else Cat(e32_out_with_carry_vec.map(i => i(31,0)).reverse))
-    // io.carry := (if(xprlen != 64) false.B else e32_out_with_carry_vec.map(i => i(32)).reduce(_ || _))
+    io.out := 0.U(xprlen.W)
   }
 }
 
