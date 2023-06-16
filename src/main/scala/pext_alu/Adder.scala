@@ -3,6 +3,7 @@ package pext_alu
 import chisel3._
 import chisel3.util._
 import chisel3.stage.ChiselStage
+import common.Functions
 
 import scala.collection.LazyZip3
 
@@ -49,16 +50,79 @@ class Adder(xprlen: Int) extends Module {
     }
     simd8
   }
-  /*
-  def saturate(uint: UInt, signed: Bool): UInt = {
-    Mux(signed,
-      MuxCase(uint, Array(
-        uint.tail(0).asBool -> Cat(false.B, Fill(uint.getWidth-1, true.B)),
-        ???
+  def add(in1: UInt, in2: UInt, signed: Bool): UInt = {
+    require(in1.getWidth == in2.getWidth)
+    Functions.ext1(in1, signed) + Functions.ext1(in2, signed)
+  }
+  def sub(in1: UInt, in2: UInt, signed: Bool): UInt = {
+    require(in1.getWidth == in2.getWidth)
+    Functions.ext1(in1, signed) - Functions.ext1(in2, signed)
+  }
+  def saturated_add(in1: UInt, in2: UInt, signed: Bool): (UInt, Bool) = {
+    require(in1.getWidth == in2.getWidth)
+    val result = add(in1, in2, signed)
+    val signed_max = Functions.signed_maximum(in1.getWidth)
+    val signed_min = Functions.signed_minimum(in1.getWidth)
+    val unsigned_max = Functions.unsigned_maximum(in1.getWidth)
+    val overflow = Wire(Bool())
+    overflow := false.B
+    val answer = Mux(signed,
+      MuxCase(result(in1.getWidth - 1, 0), Seq(
+        (result.asSInt > Functions.ext1(signed_max, signed = true.B).asSInt) -> {
+          overflow := true.B
+          signed_max
+        },
+        (result.asSInt < Functions.ext1(signed_min, signed = true.B).asSInt) -> {
+          overflow := true.B
+          signed_min
+        },
+      )),
+      MuxCase(result, Seq(
+        (result > Functions.ext1(unsigned_max, signed = false.B)) -> {
+          overflow := true.B
+          unsigned_max
+        },
       ))
     )
+    (answer, overflow)
   }
-   */
+
+  def saturated_sub(in1: UInt, in2: UInt, signed: Bool): (UInt, Bool) = {
+    require(in1.getWidth == in2.getWidth)
+    val result = sub(in1, in2, signed)
+    val signed_max = Functions.signed_maximum(in1.getWidth)
+    val signed_min = Functions.signed_minimum(in1.getWidth)
+    val unsigned_min = Functions.unsigned_minimum(in1.getWidth)
+    val overflow = Wire(Bool())
+    overflow := false.B
+    val answer = Mux(signed,
+      MuxCase(result(in1.getWidth - 1, 0), Seq(
+        (result.asSInt > Functions.ext1(signed_max, signed = true.B).asSInt) -> {
+          overflow := true.B
+          signed_max
+        },
+        (result.asSInt < Functions.ext1(signed_min, signed = true.B).asSInt) -> {
+          overflow := true.B
+          signed_min
+        },
+      )),
+      MuxCase(result, Seq(
+        (result < Functions.ext1(unsigned_min, signed = false.B)) -> {
+          overflow := true.B
+          unsigned_min
+        },
+      ))
+    )
+    (answer, overflow)
+  }
+  def halving_add(in1: UInt, in2: UInt, signed: Bool): UInt = {
+    require(in1.getWidth == in2.getWidth)
+    add(in1, in2, signed)(8,1)
+  }
+  def halving_sub(in1: UInt, in2: UInt, signed: Bool): UInt = {
+    require(in1.getWidth == in2.getWidth)
+    sub(in1, in2, signed)(8, 1)
+  }
 
   val e8_simd_len = xprlen / 8
   val e16_simd_len = xprlen / 16
