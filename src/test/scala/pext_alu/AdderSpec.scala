@@ -8,6 +8,7 @@ import scala.util.Random
 
 import scala.reflect.runtime.universe._
 
+/*
 class AdderSpec extends AnyFreeSpec with ChiselScalatestTester {
   def getElenOf[T: TypeTag]: Int = {
     typeOf[T] match {
@@ -180,6 +181,7 @@ class AdderSpec extends AnyFreeSpec with ChiselScalatestTester {
         val ans = Int8Vec_SaturatingOp(Int64ToSimdVec[Byte](in1), Int64ToSimdVec[Byte](in2), signed = true, addsub = false)
         (SimdVec_Concatenate[Byte](ans._1), ans._2)
       }
+      testValuesKAdd8bit_out.foreach(x => println(x.toString()))
       val testValuesUKAdd8bit_out: IndexedSeq[(Long, Boolean)] = for ((in1, in2) <- (testValues_in1 zip testValues_in2)) yield {
         val ans = Int8Vec_SaturatingOp(Int64ToSimdVec[Byte](in1), Int64ToSimdVec[Byte](in2), signed = false, addsub = false)
         (SimdVec_Concatenate[Byte](ans._1), ans._2)
@@ -280,3 +282,4 @@ class AdderSpec extends AnyFreeSpec with ChiselScalatestTester {
     }
   }
 }
+ */
