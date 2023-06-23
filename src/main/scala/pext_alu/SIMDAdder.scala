@@ -69,6 +69,9 @@ class SIMDAdder(xprlen: Int) extends Module {
   io.debug_e8_rs1_vec := Cat(e8_rs1_vec)
   io.debug_e8_rs2_vec := Cat(e8_rs2_vec)
 
+  // TODO: Do something for 16 and 32 element width
+  // UADD16 = ADD8(2) + ADD8(1).CarryBit, ADD8(1)
+  // SADD16 = ?
   val rawResult_e8_vec = e8_rs1_vec.zip(e8_rs2_vec).map(x => {
     val (rs1, rs2) = x
     val rs1_ext = Functions.ext1(rs1, io.signed)
